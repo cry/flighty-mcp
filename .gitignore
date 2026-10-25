@@ -1,0 +1,13 @@
+# Secrets / credentials — never commit
+src/flighty_mcp/build_token.txt
+
+# Generated protobuf code
+src/flighty_mcp/_gen/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.uv/
+dist/
+*.egg-info/

@@ -1,0 +1,471 @@
+// flighty.proto
+//
+// Protobuf schema for the Flighty API. Fields ending in _unknown / unknown_N
+// are present on the wire but unused here. proto2 is used so that explicit
+// zeros and empty strings are preserved.
+
+syntax = "proto2";
+
+package flighty;
+
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------------
+// Shared reference data
+// ---------------------------------------------------------------------------
+
+message LatLng {
+  optional double lat = 1;
+  optional double lon = 2;
+}
+
+message Airport {
+  optional string id = 1;                     // UUID, referenced elsewhere as *_airport_id
+  optional string name = 2;                   // "Singapore Changi"
+  optional string iata = 3;                   // "SIN"
+  optional string icao = 4;                   // "WSSS"
+  optional string timezone = 5;               // IANA, "Asia/Singapore"
+  optional LatLng location = 6;
+  optional string city = 7;
+  optional string country = 8;
+  optional string country_code = 9;           // ISO 3166-1 alpha-2
+  optional string region = 10;                // "Asia", "Europe", "Oceania"
+  optional int64 revision_unknown = 11;       // 29959..29994 on all records; same counter as Airline.12
+  optional google.protobuf.Timestamp created_at = 12;
+  optional google.protobuf.Timestamp updated_at = 13;
+  optional string website = 15;
+  optional string display_name = 16;          // "Singapore SIN"
+}
+
+message Airline {
+  optional string id = 1;                     // UUID, referenced elsewhere as *_airline_id
+  optional string name = 2;                   // "Qantas"
+  optional string iata = 3;                   // "QF"
+  optional string icao = 4;                   // "QFA"
+  optional string domain = 5;                 // "qantas.com.au"
+  optional string slug = 6;                   // "British_Airways"
+  optional string callsign = 7;               // ATC callsign word, "SPEEDBIRD"
+  optional string phone = 8;                  // E.164
+  optional string facebook = 9;
+  optional string alliance = 10;              // "Oneworld"
+  optional int64 active_unknown = 11;         // always 1 here (active flag)
+  optional int64 revision_unknown = 12;
+  optional google.protobuf.Timestamp created_at = 13;
+  optional google.protobuf.Timestamp updated_at = 14;
+  optional string phone_display = 16;
+  optional string phone_url = 17;             // "tel://..."
+}
+
+// The specific airframe when known, otherwise just the type.
+message Aircraft {
+  optional string registration = 1;           // tail number, "G-STBM"
+  optional string type_name = 2;              // "Boeing 777-300 ER"
+  optional int64 unknown_3 = 3;
+  optional int64 unknown_4 = 4;
+  optional string iata_type = 5;              // "77W"
+  optional string icao_type = 6;              // "B77W"
+  optional string first_flight_date = 7;      // "2020-09-22" (delivery / first flight)
+  optional int64 age_years = 8;               // 6 for a 2020 airframe in 2026
+  optional string nickname = 9;                // airframe name, "Beauty Queen", "Jetgreen"
+  optional string registration_country = 10;  // "GB"
+  optional string manufacturer = 11;
+  optional string type_id = 12;               // UUID of the aircraft type
+  optional string type_family = 13;           // "Airbus A380"
+}
+
+// ---------------------------------------------------------------------------
+// Flight
+// ---------------------------------------------------------------------------
+
+// One set of times for a departure or an arrival. The runway "scheduled" times
+// are synthesized from the gate schedule (+/- 10 min).
+message FlightTimes {
+  optional google.protobuf.Timestamp scheduled_gate = 1;   // gate out / gate in
+  optional google.protobuf.Timestamp estimated_gate = 2;
+  optional google.protobuf.Timestamp actual_gate = 3;
+  optional google.protobuf.Timestamp scheduled_runway = 4; // takeoff / landing
+  optional google.protobuf.Timestamp estimated_runway = 5;
+  optional google.protobuf.Timestamp actual_runway = 6;
+  optional int64 flag_unknown_7 = 7;          // always 1 when present
+  optional int64 flag_unknown_8 = 8;          // always 1 when present
+  optional google.protobuf.Timestamp unknown_9 = 9;
+  optional google.protobuf.Timestamp original_scheduled_gate = 10; // before any schedule change
+}
+
+message TimeWindow {
+  optional google.protobuf.Timestamp start = 1;
+  optional google.protobuf.Timestamp end = 2;
+}
+
+message Weather {
+  optional int64 temperature_c = 1;
+  optional int64 condition_code = 2;          // OpenWeatherMap codes: 800 Clear, 801 Few clouds, 802 Scattered, 804 Overcast
+  optional int64 unknown_3 = 3;
+  optional int64 unknown_4 = 4;               // 3..43 (wind speed)
+  optional string description = 5;            // "Overcast"
+  repeated WeatherAlert alerts = 6;           // usually 0 or 1, sometimes 2
+  optional int64 unknown_7 = 7;               // always 0
+  optional google.protobuf.Timestamp observed_at = 8;
+}
+
+message WeatherAlert {
+  optional string title = 1;                  // "Strong Winds"
+  optional string description = 2;
+  optional int64 code = 3;
+}
+
+// Departure.prediction / Arrival.prediction. Minutes can be negative (sent as a
+// 10-byte two's-complement varint, so int64 is required).
+message Prediction {
+  optional int64 minutes = 1;                 // (predicted delay or taxi minutes)
+  optional int64 unknown_2 = 2;
+  optional google.protobuf.Timestamp valid_until = 3;   // always generated_at + 1 h
+  optional int64 unknown_4 = 4;
+  optional google.protobuf.Timestamp generated_at = 5;
+}
+
+message StatusMark {
+  optional int64 code = 1;
+  optional google.protobuf.Timestamp at = 2;
+}
+
+message StringPair {                          // e.g. a gate range "D23".."D29"
+  optional string first = 1;
+  optional string second = 2;
+}
+
+message StringValue {
+  optional string value = 1;
+}
+
+message CheckInDesks {
+  optional string value = 1;
+  optional int64 unknown_2 = 2;
+}
+
+message ArrivalUnknown11 {
+  repeated int64 values = 1 [packed = true];  // packed repeated
+  optional int64 unknown_2 = 2;
+  optional google.protobuf.Timestamp at = 3;
+}
+
+message Departure {
+  optional Airport airport = 1;               // embedded in search/subscribe responses
+  optional string terminal = 2;
+  optional string gate = 3;
+  optional FlightTimes times = 4;
+  optional Prediction prediction = 6;
+  optional TimeWindow window_unknown_7 = 7;
+  optional TimeWindow check_in_window = 8;    // opens 24-48 h before, closes 45-120 min before
+  optional Weather weather = 9;
+  optional string airport_id = 11;            // used instead of `airport` in sync records
+  optional StatusMark status_unknown_12 = 12;
+  optional StringPair gate_range = 14;
+  optional CheckInDesks string_unknown_16 = 16;  // "15", "53" (check-in desks)
+  optional StringValue string_unknown_17 = 17;  // "F" (check-in zone)
+}
+
+message Arrival {
+  optional Airport scheduled_airport = 1;     // embedded in search/subscribe responses
+  optional Airport actual_airport = 2;        // differs from 1 on a diversion
+  optional string terminal = 3;
+  optional string gate = 4;
+  optional string baggage_claim = 5;
+  optional Weather weather = 6;
+  optional FlightTimes times = 7;
+  optional Prediction prediction = 9;
+  optional ArrivalUnknown11 unknown_11 = 11;
+  optional string scheduled_airport_id = 13;  // used instead of 1/2 in sync records
+  optional string actual_airport_id = 14;
+  optional StringPair gate_range = 16;
+  optional StringValue string_unknown_18 = 18;
+  optional StringValue string_unknown_19 = 19;
+}
+
+// A flight number under one airline. The one with is_operating set is the operating
+// carrier; the rest are codeshares. Position varies: with codeshares the operating one
+// is usually last (718 of 783 flights), and some flights flag none.
+message Designator {
+  optional Airline airline = 1;               // embedded in search/subscribe responses
+  optional string flight_number = 2;          // "1", "287"
+  optional bool is_operating = 3;     
+  optional string airline_id = 4;             // used instead of `airline` in sync records
+}
+
+// One entry in the flight's change history. Exactly one of the variant fields is set.
+message FlightEvent {
+  optional google.protobuf.Timestamp at = 1;  // when Flighty recorded the change
+  optional StringValue changed_2 = 2;         // "9" (baggage claim change)
+  optional StringValue aircraft_type_changed = 3;
+  optional StatusMark status_changed = 5;     // code is a flight-status enum (values not decoded)
+  optional TerminalGateChange terminal_gate_changed = 6;
+  optional EventUnknown8 unknown_8 = 8;
+  optional TimeChange time_changed = 9;       // the most common event by far
+  optional StringValue tail_assigned = 10;    // "BLXD" (registration without the dash)
+}
+
+message TerminalGateChange {
+  optional int64 side = 1;                    // 1 on arrival-side changes (0/absent = departure)
+  optional string terminal = 2;
+  optional string gate = 3;
+}
+
+message TimeChange {
+  optional int64 flag_1 = 1;                  // 1/2/3 are flags; together they say which of the
+  optional int64 flag_2 = 2;                  // FlightTimes fields changed (exact mapping not decoded)
+  optional int64 flag_3 = 3;
+  optional google.protobuf.Timestamp new_time = 4;
+}
+
+message EventUnknown8 {
+  optional int64 value = 1;
+}
+
+message FlightStatsUnknown {                  // small integers, 1..8 (historical on-time stats)
+  optional int64 v1 = 1;
+  optional int64 v2 = 2;
+  optional int64 v3 = 3;
+  optional int64 v4 = 4;
+  optional int64 v5 = 5;
+  optional int64 v6 = 6;
+  optional int64 v7 = 7;
+  optional int64 v8 = 8;
+}
+
+message Advisory {                            // e.g. an FAA airport advisory
+  optional int64 type = 1;
+  optional google.protobuf.Timestamp start = 2;
+  optional google.protobuf.Timestamp end = 3;
+  optional string reason = 4;                 // "WIND", "procedural compliance and runway construction"
+  optional int64 unknown_5 = 5;
+  optional int64 unknown_6 = 6;
+}
+
+message DisruptionForecast {
+  optional google.protobuf.Timestamp start = 1;
+  optional google.protobuf.Timestamp end = 2;
+  optional string reason = 3;                 // "strong wind conditions", "weather"
+  repeated HourlySeverity hours = 4;
+}
+
+message HourlySeverity {
+  optional google.protobuf.Timestamp start = 1;
+  optional google.protobuf.Timestamp end = 2;
+  optional int64 severity = 3;
+}
+
+message Flight {
+  optional string id = 1;                     // flight UUID (same as UserFlight.id)
+  optional Departure departure = 2;
+  optional Arrival arrival = 3;
+  optional Airline airline = 4;               // embedded in search/subscribe responses
+  optional int64 unknown_5 = 5;
+  repeated Designator designators = 6;
+  optional Aircraft aircraft = 7;
+  optional string atc_callsign = 8;           // "QFA432"
+  optional int64 unknown_9 = 9;               // almost always 1
+  repeated Flight previous_legs = 10;         // the aircraft's earlier legs ("where's my plane")
+  repeated FlightEvent events = 11;
+  optional FlightStatsUnknown stats_unknown = 12;
+  optional google.protobuf.Timestamp created_at = 13;
+  optional google.protobuf.Timestamp updated_at = 14;
+  optional google.protobuf.Timestamp unknown_15 = 15;
+  optional string flight_number = 16;         // number of the operating designator
+  optional int64 distance_km = 17;            // SIN-LHR 10881, SYD-SIN 6294, LHR-SFO 8617
+  optional Advisory advisory = 18;
+  optional DisruptionForecast disruption_forecast = 19;
+  optional string airline_id = 21;            // used instead of `airline` in sync records
+}
+
+// A flight on someone's list. Your own flights and your friends' flights both arrive this way.
+message UserFlight {
+  optional string id = 1;                     // == Flight.id
+  optional Flight flight = 2;
+  optional int64 unknown_3 = 3;               // 1 or absent
+  optional int64 unknown_5 = 5;               // 1 or absent
+  optional int64 unknown_6 = 6;               // 1 or absent
+  optional int64 kind = 7;                    // 5 = a friend's flight; 0/2/3 = your own (3 = just added via flight-number search)
+  optional string owner_user_id = 9;
+  optional string share_url = 10;             // https://live.flighty.app/...
+  optional google.protobuf.Timestamp created_at = 11;
+  optional google.protobuf.Timestamp updated_at = 12;
+  optional google.protobuf.Timestamp unknown_13 = 13;   // equals Flight.unknown_15 when both set
+}
+
+// ---------------------------------------------------------------------------
+// Account
+// ---------------------------------------------------------------------------
+
+message KeyValue {                            // repeated KeyValue == map<string,string> on the wire
+  optional string key = 1;
+  optional string value = 2;
+}
+
+message User {
+  optional string id = 1;
+  optional string account_type = 2;           // "ANONYMOUS"
+  optional string auth_token = 3;             // SECRET: the same bearer JWT the app sends on every request
+  optional google.protobuf.Timestamp created_at = 4;
+  optional google.protobuf.Timestamp unknown_5 = 5;
+  optional string digest_frequency = 7;       // "WEEKLY"
+  repeated KeyValue flags = 8;                // feature flags: "CALENDAR_IMPORT_V2" -> "true"
+}
+
+message Subscription {
+  optional string user_id = 1;
+  optional string product_id = 2;             // "com.flightyapp.flighty.yearlyPlan"
+  optional google.protobuf.Timestamp original_purchase = 3;
+  optional google.protobuf.Timestamp expires_at = 4;
+  optional int64 active = 6;
+  optional google.protobuf.Timestamp unknown_9 = 9;
+  optional google.protobuf.Timestamp updated_at = 10;
+}
+
+// ---------------------------------------------------------------------------
+// Endpoints
+// ---------------------------------------------------------------------------
+
+// GET /v1/static_assets  -> com.flighty.proto.api.GetStaticAssetsResponse
+message GetStaticAssetsResponse {
+  repeated StaticAsset assets = 1;
+}
+
+message StaticAsset {
+  optional AssetType type = 1;                // absent means FAQ (enum default 0)
+  optional string url = 2;
+  optional google.protobuf.Timestamp version = 3;  // also embedded in the file name
+}
+
+enum AssetType {
+  FAQ = 0;
+  AIRLINE_LOGOS = 1;
+  AIRCRAFT_IMAGES = 2;
+  MAPS = 3;
+  CALENDAR_IMPORT_CONFIG = 4;
+  ABOUT = 5;
+  PASSPORTS = 6;
+}
+
+// GET /v1/radar/layers  -> com.flighty.api.proto.response.GetRadarLayersResponseProto
+message GetRadarLayersResponse {
+  repeated RadarLayer layers = 1;
+  optional string unknown_2 = 2;              // empty string here
+}
+
+message RadarLayer {
+  optional string name = 1;                   // "MRMS_CONUS" (NOAA Multi-Radar Multi-Sensor mosaic)
+  repeated LatLng corners = 2;                // NW, SW, NE, SE
+  optional string image_url = 3;              // .webp overlay (served as Content-Type image/png)
+  optional int64 unknown_4 = 4;               // 1 on one layer
+}
+
+// POST /v1/search
+message SearchRequest {
+  optional SearchFlightNumber query = 1;
+  optional string date = 3;                   // local departure date, "2027-04-30"
+  optional string mode = 4;                   // "FLIGHT_NUMBER" (also the analytics `via` value)
+}
+
+message SearchFlightNumber {
+  optional string airline_id = 1;
+  optional string flight_number = 2;
+}
+
+// POST /v1/search  -> com.flighty.api.proto.response.SearchResponseProto
+message SearchResponse {
+  optional SearchResult result = 2;
+}
+
+message SearchResult {
+  repeated Flight flights = 1;                // one per leg; QF1 returns SYD-SIN and SIN-LHR
+  repeated SearchFlightState states = 2;
+}
+
+message SearchFlightState {
+  optional string flight_id = 1;
+  optional int64 state_unknown = 2;           // 0 for both legs here
+}
+
+// POST /v1/flight/{id}/subscribe?is_passenger=true&source
+//   -> com.flighty.api.proto.response.SubscribeFlightResponseProto
+message SubscribeFlightResponse {
+  optional UserFlight user_flight = 1;
+}
+
+// POST /v1/sync/full?token=...  (request body is optional)
+// `change` is repeated: the app pushes one entry per local edit. A ticket edit
+// is sent as a ticket change (#24) followed by a flight change (#11) for the
+// same flight, each with its own client_time.
+message SyncRequest {
+  repeated SyncChange change = 1;
+}
+
+message SyncChange {
+  optional google.protobuf.Timestamp client_time = 1;
+  optional FlightRef flight = 11;             // (the flight the client just changed)
+  optional Ticket ticket = 24;                // booking reference / seat / cabin for a flight
+}
+
+message FlightRef {
+  optional string id = 1;
+}
+
+// Booking info for a flight. Sent by the client as SyncChange.ticket (fields
+// 1-5) and echoed by the server as SyncRecord.ticket (with 6-8 added).
+message Ticket {
+  optional string flight_id = 1;
+  optional string pnr = 2;                    // booking reference / record locator, e.g. "AAAAAA"
+  optional string seat_number = 3;            // "1A"
+  optional int64 seat_position = 4;           // 0 aisle, 1 middle, 2 window
+  optional int64 cabin_class = 5;             // 0 economy, 1 premiumEconomy, 2 business, 3 first
+  optional string user_id = 6;                // server-added on the echoed record
+  optional google.protobuf.Timestamp created_at = 7;   // server-added
+  optional google.protobuf.Timestamp updated_at = 8;   // server-added
+}
+
+// POST /v1/sync/full  -> com.flighty.api.proto.response.SyncResponseProto
+message SyncResponse {
+  optional SyncCursor next = 1;
+  repeated SyncRecord records = 2;
+}
+
+message SyncCursor {
+  optional string url = 1;                    // full URL of the next sync, with the new token
+  optional bool has_more = 2;                 // more pages to fetch
+}
+
+message SyncRecord {                          // exactly one field set
+  optional Subscription subscription = 11;
+  optional Ticket ticket = 12;                // booking reference echoed back after a ticket change
+  optional User user = 14;
+  optional UserFlight user_flight = 15;
+}
+
+// POST /v1/sync/content/flight/{id}  -> com.flighty.api.proto.FlightPollSync
+// The ETag on this response is base64 JSON:
+//   {"version":1,"flightPositions":{},"plannedRoutes":{},"nearby":{}}
+message FlightPollSync {
+  repeated FlightPositions positions = 2;
+  optional int64 next_poll_at = 5;            // epoch seconds, ~24 h ahead
+  optional int64 expires_at = 6;              // epoch seconds, equal to 5 here
+}
+
+message FlightPositions {
+  optional string flight_id = 1;
+  optional bytes data = 2;                    // empty for a flight months away
+}
+
+// wss://websockets.flightyapp.com/ws  (binary frames; names are ours)
+message WsClientMessage {
+  optional WsAuth auth = 1;                   // first frame after connecting
+}
+
+message WsAuth {
+  optional string token = 1;                  // SECRET: same bearer JWT as the Authorization header
+}
+
+message WsServerMessage {
+  optional WsSyncNeeded sync_needed = 1;      // empty; tells the client to call /v1/sync/full
+}
+
+message WsSyncNeeded {}
