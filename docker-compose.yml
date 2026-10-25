@@ -1,0 +1,29 @@
+# The read-only MCP server, behind the gateway.
+#
+# No ports, no Traefik labels and no router: the only thing that can reach this
+# is mcp-gateway, over the internal proxy network, and the gateway is what
+# authenticates the caller.
+#
+# Deployed by checking this repository out on the host and running it from
+# there, so `build: .` and `./data` are the checkout. Two things in that
+# directory are not in git and must survive a pull: `.env`, holding the token
+# pair, and `data/`, holding the database snapshot.
+services:
+  flighty-mcp:
+    build: .
+    container_name: flighty-mcp
+    restart: unless-stopped
+    environment:
+      - FLIGHTY_AUTH_TOKEN=${FLIGHTY_AUTH_TOKEN}
+      - FLIGHTY_BUILD_TOKEN=${FLIGHTY_BUILD_TOKEN}
+    volumes:
+      # Snapshot of the Mac's Flighty database: reference tables and the
+      # account's flight list, with the Account row stripped. Refreshed by
+      # scripts/export-db.sh on the Mac.
+      - ./data:/data:ro
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

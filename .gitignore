@@ -1,6 +1,13 @@
 # Secrets / credentials — never commit
 src/flighty_mcp/build_token.txt
 
+# The deployment host checks this repository out and runs docker compose from
+# the checkout, so both of these sit in the working tree there. .env holds the
+# account bearer and the build token; data/ holds the database snapshot, which
+# is the account's flight history even with the Account row stripped.
+.env
+data/
+
 # Generated protobuf code
 src/flighty_mcp/_gen/
 
