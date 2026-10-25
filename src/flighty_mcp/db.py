@@ -8,6 +8,7 @@ touched and we can never write to it.
 from __future__ import annotations
 
 import datetime
+import os
 import sqlite3
 from typing import Any
 
@@ -22,15 +23,19 @@ def _connect() -> sqlite3.Connection:
 
 
 def get_auth_token() -> str:
-    """The account bearer JWT (Account.authToken). Treat it like a password."""
+    """The account bearer JWT. From FLIGHTY_AUTH_TOKEN, else Account.authToken
+    in the Flighty database. Treat it like a password."""
+    env = os.environ.get("FLIGHTY_AUTH_TOKEN")
+    if env:
+        return env.strip()
     with _connect() as conn:
         row = conn.execute(
             "SELECT authToken FROM Account ORDER BY lastUpdated DESC LIMIT 1"
         ).fetchone()
     if not row or not row["authToken"]:
         raise RuntimeError(
-            "No auth token found in the Flighty database. Is Flighty signed in? "
-            f"(looked in {config.db_path()})"
+            "No auth token found. Set FLIGHTY_AUTH_TOKEN, or sign in to the "
+            f"Flighty app (looked in {config.db_path()})."
         )
     return row["authToken"]
 

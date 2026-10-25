@@ -56,9 +56,25 @@ claude mcp add flighty -- uv --directory /path/to/flighty-mcp run flighty-mcp
 
 | Env var | Default |
 |---|---|
+| `FLIGHTY_AUTH_TOKEN` | read from the Flighty database |
+| `FLIGHTY_BUILD_TOKEN` | read from the app bundle |
 | `FLIGHTY_DB_PATH` | `~/Library/Containers/com.flightyapp.flighty/Data/Documents/MainFlightyDatabase.db` |
 | `FLIGHTY_APP_PATH` | `/Applications/Flighty.app` |
-| `FLIGHTY_BUILD_TOKEN` | read from the app bundle |
+
+Set `FLIGHTY_AUTH_TOKEN` and `FLIGHTY_BUILD_TOKEN` to run without the Flighty
+app present (e.g. on another machine). On a Mac with the app, read them with:
+
+```sh
+# FLIGHTY_AUTH_TOKEN
+sqlite3 "$HOME/Library/Containers/com.flightyapp.flighty/Data/Documents/MainFlightyDatabase.db" \
+  "SELECT authToken FROM Account ORDER BY lastUpdated DESC LIMIT 1"
+
+# FLIGHTY_BUILD_TOKEN
+plutil -extract FlightyBuildToken raw /Applications/Flighty.app/Contents/Info.plist
+```
+
+The auth token is account-specific — treat it like a password. The build token
+identifies the app version, not you.
 
 ## Notes
 
