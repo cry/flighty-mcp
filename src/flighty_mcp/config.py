@@ -31,6 +31,33 @@ def db_path() -> str:
     return os.environ.get("FLIGHTY_DB_PATH", DEFAULT_DB_PATH)
 
 
+def transport() -> str:
+    """"stdio" (default) or "streamable-http" when running behind a gateway."""
+    return os.environ.get("FLIGHTY_TRANSPORT", "stdio")
+
+
+def host() -> str:
+    return os.environ.get("FLIGHTY_HOST", "127.0.0.1")
+
+
+def port() -> int:
+    return int(os.environ.get("FLIGHTY_PORT", "8000"))
+
+
+def readonly() -> bool:
+    """Whether to omit the tools that need a live sync cursor.
+
+    The three write tools post to ``SyncInfo.nextURL`` — the cursor the Flighty
+    app rewrites on every sync (see ``db.get_sync_url``). A copied database has
+    a stale cursor by definition, so those tools cannot work away from the Mac
+    that runs the app. They are left unregistered rather than registered and
+    failing: a model that sees ``remove_flight`` in ``tools/list`` will
+    eventually call it, and "no sync cursor" is a confusing way to learn that
+    this deployment never could.
+    """
+    return os.environ.get("FLIGHTY_READONLY", "").lower() in {"1", "true", "yes"}
+
+
 def app_path() -> str:
     return os.environ.get("FLIGHTY_APP_PATH", DEFAULT_APP_PATH)
 

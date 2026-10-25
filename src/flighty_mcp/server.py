@@ -1,12 +1,18 @@
-"""Flighty MCP server (stdio).
+"""Flighty MCP server.
 
 Tools:
   - search_flights(airline, flight_number, date): find the legs of a flight.
   - add_flight(flight_id, is_passenger, ...): add a leg to your account.
-  - set_ticket(flight_id, ...): attach booking info to a flight.
-  - set_tickets(tickets): set booking info on many flights in one call.
-  - remove_flight(flight_id): remove a flight from your account.
+  - set_ticket(flight_id, ...): attach booking info to a flight.          [1]
+  - set_tickets(tickets): set booking info on many flights in one call.   [1]
+  - remove_flight(flight_id): remove a flight from your account.          [1]
   - list_my_flights(): your existing flights, from the local app database.
+
+[1] Needs the Flighty app's live sync cursor, so these are registered only
+    when FLIGHTY_READONLY is unset. See `_sync_tool` and `config.readonly`.
+
+Runs over stdio by default, or streamable-HTTP under FLIGHTY_TRANSPORT for the
+containerised deployment behind the MCP gateway.
 """
 from __future__ import annotations
 
@@ -16,7 +22,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field
 
-from . import client, db
+from . import client, config, db
 
 mcp = MCPServer(
     "flighty",
@@ -40,6 +46,21 @@ mcp = MCPServer(
         "add_flight). It is destructive — confirm with the user first."
     ),
 )
+
+
+def _sync_tool():
+    """Register a tool only when a live Flighty database is available.
+
+    The tools this guards post to the app's sync cursor, which a copied
+    database has no usable one of. Under FLIGHTY_READONLY they are not
+    registered at all, so they never reach a client's tool list — a model that
+    can see `remove_flight` will eventually call it, and "no sync cursor" is a
+    confusing way to learn that this deployment never could.
+    """
+    if config.readonly():
+        return lambda fn: fn
+    return mcp.tool()
+
 
 # Integer codes the API uses for each ticket seat-position / cabin-class label.
 SEAT_POSITIONS = {"aisle": 0, "middle": 1, "window": 2}
@@ -215,7 +236,7 @@ def add_flight(
     return result
 
 
-@mcp.tool()
+@_sync_tool()
 def set_ticket(
     flight_id: str,
     pnr: str | None = None,
@@ -352,7 +373,7 @@ def _set_tickets_batch(tickets: list[TicketSpec]) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@_sync_tool()
 def set_tickets(tickets: list[TicketSpec], mode: str = "sequential") -> dict[str, Any]:
     """Set booking info on MANY flights in one call. WRITES TO YOUR LIVE ACCOUNT.
 
@@ -381,7 +402,7 @@ def set_tickets(tickets: list[TicketSpec], mode: str = "sequential") -> dict[str
     return _set_tickets_sequential(tickets)
 
 
-@mcp.tool()
+@_sync_tool()
 def remove_flight(flight_id: str) -> dict[str, Any]:
     """Remove a flight from your Flighty account. THIS WRITES TO YOUR LIVE ACCOUNT.
 
@@ -422,7 +443,21 @@ def list_my_flights(include_archived: bool = False) -> dict[str, Any]:
 
 
 def main() -> None:
-    mcp.run()
+    transport = config.transport()
+    if transport == "stdio":
+        mcp.run()
+        return
+    # Behind the gateway. No auth here: this listens on an internal Docker
+    # network with no Traefik router, so the gateway is the only thing that can
+    # reach it. DNS-rebinding protection is left off (the SDK's default when no
+    # transport_security is passed) because it guards browsers against local
+    # servers, which is not the path here.
+    mcp.run(
+        transport=transport,
+        host=config.host(),
+        port=config.port(),
+        streamable_http_path="/mcp",
+    )
 
 
 if __name__ == "__main__":

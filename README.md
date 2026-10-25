@@ -60,6 +60,10 @@ claude mcp add flighty -- uv --directory /path/to/flighty-mcp run flighty-mcp
 | `FLIGHTY_BUILD_TOKEN` | read from the app bundle |
 | `FLIGHTY_DB_PATH` | `~/Library/Containers/com.flightyapp.flighty/Data/Documents/MainFlightyDatabase.db` |
 | `FLIGHTY_APP_PATH` | `/Applications/Flighty.app` |
+| `FLIGHTY_TRANSPORT` | `stdio` (or `streamable-http`) |
+| `FLIGHTY_HOST` | `127.0.0.1` (HTTP transport only) |
+| `FLIGHTY_PORT` | `8000` (HTTP transport only) |
+| `FLIGHTY_READONLY` | unset — see [Running without the app](#running-without-the-app) |
 
 Set `FLIGHTY_AUTH_TOKEN` and `FLIGHTY_BUILD_TOKEN` to run without the Flighty
 app present (e.g. on another machine). On a Mac with the app, read them with:
@@ -73,8 +77,36 @@ sqlite3 "$HOME/Library/Containers/com.flightyapp.flighty/Data/Documents/MainFlig
 plutil -extract FlightyBuildToken raw /Applications/Flighty.app/Contents/Info.plist
 ```
 
-The auth token is account-specific — treat it like a password. The build token
-identifies the app version, not you.
+The auth token is account-specific — treat it like a password. It carries no
+`exp` claim, so it does not expire and the only way to revoke it is to change
+the account password. The build token identifies the app version, not you, and
+expires in September 2031.
+
+## Running without the app
+
+The two tokens are not sufficient on their own. `db.py` also supplies the
+airline and airport reference tables that `search_flights` needs (the API wants
+an airline UUID, not an IATA code), the account's flight list, and the Flighty
+app's **live sync cursor** — `SyncInfo.nextURL`, which the app rewrites on every
+sync.
+
+That cursor is what the three write tools post to, so they cannot work from a
+copied database. `FLIGHTY_READONLY=1` leaves them unregistered rather than
+registered and failing: a model that can see `remove_flight` will eventually
+call it, and "no sync cursor" is a confusing way to learn this deployment never
+could. Under it, the tool list is `search_flights`, `add_flight` and
+`list_my_flights`.
+
+So a deployment away from the Mac needs both tokens and a database snapshot,
+with `FLIGHTY_DB_PATH` pointing at it. `scripts/export-db.sh` makes one with
+`sqlite3 .backup` (safe against the running app, unlike `cp`, which would miss
+the `-wal`), drops the `Account` table so the snapshot is not a second copy of
+the bearer token, and ships it to the host named by `FLIGHTY_REMOTE`.
+
+`Dockerfile` builds that deployment. It is driven from
+[`mcp-gateway`](../mcp-gateway), which fronts it with OAuth; the container
+itself authenticates nothing because it is only reachable from the gateway on an
+internal network.
 
 ## Notes
 
