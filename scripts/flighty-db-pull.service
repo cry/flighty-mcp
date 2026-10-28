@@ -1,0 +1,22 @@
+[Unit]
+Description=Pull the Flighty database snapshot from the Mac
+Documentation=https://github.com/cry/mcp-gateway/blob/main/PLANS/02-flighty.md
+OnFailure=flighty-alert@%n.service
+
+# A *user* unit (~/.config/systemd/user/), the same shape lfsync.service uses:
+# installing it needs no root, and the account is in the docker group so it
+# reaches the daemon through its socket. It therefore cannot declare
+# Requires=docker.service, which is a system unit and not visible here.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/flighty-db-pull
+
+# Generous, because the slow part is sending a ~16 MB database over the LAN
+# after sqlite3 has vacuumed it. The ceiling exists so a Mac that accepted the
+# TCP connection and then went to sleep cannot leave this unit running until
+# tomorrow's timer.
+TimeoutStartSec=10min
+
+# No [Install] section on purpose: started by flighty-db-pull.timer, and an
+# [Install] here would also run it at every login and boot.

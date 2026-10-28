@@ -1,0 +1,20 @@
+[Unit]
+Description=Report that %i failed
+
+# Reached by OnFailure=flighty-alert@%n.service, so %i is the unit that failed.
+# The same shape as lfsync-alert@.service, with its own syslog tag so a Flighty
+# failure is not filed under the ledger sync.
+#
+# It exists because of exactly the failure this whole job was written to fix:
+# the previous launchd export failed on every single run for two days and
+# nothing said a word. The snapshot simply went stale, and `list_my_flights`
+# kept answering -- with older data -- which is the worst shape a broken sync
+# can take.
+#
+# What it does is the floor, not the ceiling: an error-priority journal line and
+# the tail of the run that failed, so `journalctl --user -p err` shows it. Point
+# it at mail, ntfy or a healthcheck ping by editing ExecStart.
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'journalctl --user-unit %i -n 25 --no-pager | systemd-cat -t flighty-alert -p err'

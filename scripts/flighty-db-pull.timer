@@ -1,0 +1,21 @@
+[Unit]
+Description=Pull the Flighty database snapshot from the Mac, twice a day
+
+[Timer]
+# Twice rather than once, which the old daily launchd job was. Not because the
+# data moves -- the reference tables are static and the flight list changes a
+# few times a month -- but because the Mac is the one part of this that can be
+# unavailable, and a second attempt costs nothing. `Persistent=true` covers
+# blinky being down; nothing covers the Mac being down except trying again.
+OnCalendar=*-*-* 05:00:00
+OnCalendar=*-*-* 17:00:00
+
+RandomizedDelaySec=10min
+
+# A missed window because blinky was off runs once it comes back, rather than
+# silently skipping. The state for this lives in ~/.local/share/systemd/timers
+# and needs linger enabled on the account, which it already is for lfsync.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

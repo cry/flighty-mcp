@@ -1,15 +1,20 @@
 """Flighty MCP server.
 
-Tools:
-  - search_flights(airline, flight_number, date): find the legs of a flight.
-  - add_flight(flight_id, is_passenger, ...): add a leg to your account.
-  - set_ticket(flight_id, ...): attach booking info to a flight.          [1]
-  - set_tickets(tickets): set booking info on many flights in one call.   [1]
-  - remove_flight(flight_id): remove a flight from your account.          [1]
-  - list_my_flights(): your existing flights, from the local app database.
+Tools, and which of them change the account:
+
+  read   search_flights(airline, flight_number, date): find a flight's legs.
+  read   list_my_flights(): your flights, from the local app database.
+  WRITE  add_flight(flight_id, is_passenger, ...): add a leg to your account.
+  WRITE  set_ticket(flight_id, ...): attach booking info to a flight.      [1]
+  WRITE  set_tickets(tickets): booking info on many flights in one call.   [1]
+  WRITE  remove_flight(flight_id): remove a flight. Destructive.           [1]
 
 [1] Needs the Flighty app's live sync cursor, so these are registered only
     when FLIGHTY_READONLY is unset. See `_sync_tool` and `config.readonly`.
+    The container therefore serves two reads and one write, `add_flight`.
+
+Each is annotated accordingly -- see the ToolAnnotations constants below, which
+are what a client reads to decide whether to confirm before calling.
 
 Runs over stdio by default, or streamable-HTTP under FLIGHTY_TRANSPORT for the
 containerised deployment behind the MCP gateway.
@@ -20,9 +25,46 @@ import datetime
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from . import client, config, db
+
+# Which tools change the account, declared rather than left to be inferred.
+#
+# `readOnlyHint` is absent-means-false in the MCP spec, so an unannotated tool
+# is already treated as one that might write -- which made `search_flights` and
+# `list_my_flights` look as dangerous as `add_flight`, and `add_flight` no more
+# dangerous than a search. A client deciding whether to confirm before calling
+# had nothing to go on, and the gateway's own read-only split is documented in
+# terms of which tools carry this flag.
+#
+# `openWorldHint` separates the two reads: `search_flights` asks the Flighty
+# API about the world's schedules, `list_my_flights` reads the local database
+# snapshot and nothing else.
+READ_API = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+READ_LOCAL = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+
+# `idempotentHint` is true for all three writes and is not a formality: it is
+# the documented recovery procedure. Re-running `add_flight` on a flight that
+# is already active just bumps its server-side `updated_at`, which is how a
+# flight stuck behind the app's sync cursor is brought back.
+WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+# `remove_flight` is the only one that takes something away. It is reversible
+# through `add_flight` -- the server keeps the record and re-subscribes it --
+# but a client should still ask first, and `destructiveHint` is how it knows to.
+DESTRUCTIVE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
 
 mcp = MCPServer(
     "flighty",
@@ -48,7 +90,7 @@ mcp = MCPServer(
 )
 
 
-def _sync_tool():
+def _sync_tool(annotations: ToolAnnotations | None = None):
     """Register a tool only when a live Flighty database is available.
 
     The tools this guards post to the app's sync cursor, which a copied
@@ -59,7 +101,7 @@ def _sync_tool():
     """
     if config.readonly():
         return lambda fn: fn
-    return mcp.tool()
+    return mcp.tool(annotations=annotations)
 
 
 # Integer codes the API uses for each ticket seat-position / cabin-class label.
@@ -139,7 +181,7 @@ def _format_leg(flight: Any) -> dict[str, Any]:
     return leg
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_API)
 def search_flights(airline: str, flight_number: str, date: str) -> dict[str, Any]:
     """Search Flighty for a scheduled flight by airline, number, and date.
 
@@ -187,7 +229,7 @@ def search_flights(airline: str, flight_number: str, date: str) -> dict[str, Any
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def add_flight(
     flight_id: str,
     is_passenger: bool = True,
@@ -236,7 +278,7 @@ def add_flight(
     return result
 
 
-@_sync_tool()
+@_sync_tool(WRITE)
 def set_ticket(
     flight_id: str,
     pnr: str | None = None,
@@ -373,7 +415,7 @@ def _set_tickets_batch(tickets: list[TicketSpec]) -> dict[str, Any]:
     }
 
 
-@_sync_tool()
+@_sync_tool(WRITE)
 def set_tickets(tickets: list[TicketSpec], mode: str = "sequential") -> dict[str, Any]:
     """Set booking info on MANY flights in one call. WRITES TO YOUR LIVE ACCOUNT.
 
@@ -402,7 +444,7 @@ def set_tickets(tickets: list[TicketSpec], mode: str = "sequential") -> dict[str
     return _set_tickets_sequential(tickets)
 
 
-@_sync_tool()
+@_sync_tool(DESTRUCTIVE)
 def remove_flight(flight_id: str) -> dict[str, Any]:
     """Remove a flight from your Flighty account. THIS WRITES TO YOUR LIVE ACCOUNT.
 
@@ -427,7 +469,7 @@ def remove_flight(flight_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_LOCAL)
 def list_my_flights(include_archived: bool = False) -> dict[str, Any]:
     """List flights already on your Flighty account, from the local app database.
 
